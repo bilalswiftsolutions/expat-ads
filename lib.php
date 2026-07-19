@@ -93,6 +93,24 @@ function is_valid_expat_url(string $url): bool
     );
 }
 
+/**
+ * @return list<string>
+ */
+function allowed_statuses(): array
+{
+    return ['active', 'removed', 'unknown'];
+}
+
+function normalize_status(string $status): string
+{
+    $status = strtolower(trim($status));
+    if (!in_array($status, allowed_statuses(), true)) {
+        throw new InvalidArgumentException('Status must be active, removed, or unknown.');
+    }
+
+    return $status;
+}
+
 function is_cloudflare_html(string $html, int $httpCode = 0): bool
 {
     $lower = strtolower($html);

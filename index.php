@@ -66,6 +66,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } elseif ($action === 'update') {
             $id = (string) ($_POST['id'] ?? '');
             $url = normalize_url((string) ($_POST['url'] ?? ''));
+            $status = normalize_status((string) ($_POST['status'] ?? 'unknown'));
+            $recheck = isset($_POST['recheck']) && (string) $_POST['recheck'] === '1';
             $idx = find_ad_index($ads, $id);
 
             if ($idx < 0) {
@@ -85,10 +87,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
 
             $ads[$idx]['url'] = $url;
-            $ads[$idx] = refresh_ad($ads[$idx]);
-            save_ads($ads);
-            $status = strtoupper((string) $ads[$idx]['status']);
-            flash_set('success', "Ad link updated. Status: {$status}");
+
+            if ($recheck) {
+                $ads[$idx] = refresh_ad($ads[$idx]);
+                save_ads($ads);
+                $status = strtoupper((string) $ads[$idx]['status']);
+                flash_set('success', "Ad link updated and rechecked. Status: {$status}");
+            } else {
+                $ads[$idx]['status'] = $status;
+                $ads[$idx]['note'] = 'status set manually';
+                $ads[$idx]['checked_at'] = gmdate('c');
+                save_ads($ads);
+                flash_set(
+                    'success',
+                    'Ad link updated. Status: ' . strtoupper($status) . ' (manual — cron will overwrite on next run)'
+                );
+            }
         } elseif ($action === 'delete') {
             $id = (string) ($_POST['id'] ?? '');
             $idx = find_ad_index($ads, $id);
@@ -244,7 +258,7 @@ foreach ($ads as $ad) {
             flex-wrap: wrap;
         }
 
-        input[type="url"], input[type="text"] {
+        input[type="url"], input[type="text"], select {
             flex: 1 1 280px;
             min-width: 0;
             padding: 0.7rem 0.85rem;
@@ -252,6 +266,28 @@ foreach ($ads as $ad) {
             border-radius: 10px;
             font: inherit;
             background: #fff;
+        }
+
+        select {
+            flex: 0 1 160px;
+        }
+
+        .edit-options {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.8rem 1.2rem;
+            align-items: center;
+            width: 100%;
+            margin-top: 0.15rem;
+            color: var(--muted);
+            font-size: 0.9rem;
+        }
+
+        .edit-options label {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.4rem;
+            cursor: pointer;
         }
 
         button, .btn {
@@ -400,9 +436,26 @@ foreach ($ads as $ad) {
                 placeholder="https://www.expatriates.com/cls/63782887.html"
                 value="<?= h($editingAd ? (string) $editingAd['url'] : '') ?>"
             >
+            <?php if ($editingAd): ?>
+                <?php $editStatus = (string) ($editingAd['status'] ?? 'unknown'); ?>
+                <select name="status" aria-label="Status">
+                    <?php foreach (allowed_statuses() as $statusOption): ?>
+                        <option value="<?= h($statusOption) ?>" <?= $editStatus === $statusOption ? 'selected' : '' ?>>
+                            <?= h(ucfirst($statusOption)) ?>
+                        </option>
+                    <?php endforeach; ?>
+                </select>
+            <?php endif; ?>
             <button class="btn-primary" type="submit"><?= $editingAd ? 'Save changes' : 'Add URL' ?></button>
             <?php if ($editingAd): ?>
                 <a class="btn btn-muted" href="index.php">Cancel</a>
+                <div class="edit-options">
+                    <label>
+                        <input type="checkbox" name="recheck" value="1">
+                        Also recheck live status after save
+                    </label>
+                    <span>Leave unchecked to set status manually and test that cron overwrites it.</span>
+                </div>
             <?php endif; ?>
         </form>
     </section>

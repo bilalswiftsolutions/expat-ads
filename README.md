@@ -17,6 +17,7 @@ Live example subdomain: `expat-status.bilalarshad.pro`
   - **Unknown** (amber) — could not determine (e.g. Cloudflare still blocking)
 - Newest ads appear at the top
 - Data stored in `data/ads.json` (no database)
+- **Manual status edit** on Edit (Active / Removed / Unknown) to test that cron overwrites it
 
 Example URL format:
 
