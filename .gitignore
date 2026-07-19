@@ -5,3 +5,5 @@ data/*-test.html
 data/*-test.err
 data/chrome-test.*
 data/pw-test.*
+data/ads.json
+data/ads.json.tmp
