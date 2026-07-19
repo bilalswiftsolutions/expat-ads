@@ -16,6 +16,7 @@
 
 const { chromium } = require('playwright-core');
 const fs = require('fs');
+const { execSync } = require('child_process');
 
 const url = process.argv[2];
 if (!url) {
@@ -29,6 +30,9 @@ const CHROME_CANDIDATES = [
   '/usr/bin/google-chrome-stable',
   '/usr/bin/chromium',
   '/usr/bin/chromium-browser',
+  '/snap/bin/chromium',
+  '/usr/lib/chromium/chromium',
+  '/usr/lib/chromium-browser/chromium-browser',
 ].filter(Boolean);
 
 function findChrome() {
@@ -40,6 +44,22 @@ function findChrome() {
       // try next
     }
   }
+
+  // Last resort: resolve from PATH (works for www-data cron if PATH includes chrome).
+  for (const name of ['google-chrome', 'google-chrome-stable', 'chromium', 'chromium-browser']) {
+    try {
+      const resolved = execSync(`command -v ${name}`, {
+        encoding: 'utf8',
+        timeout: 3000,
+      }).trim();
+      if (resolved) {
+        return resolved;
+      }
+    } catch {
+      // try next
+    }
+  }
+
   return null;
 }
 
