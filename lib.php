@@ -228,7 +228,23 @@ function fetch_via_browser(string $url): array
         2 => ['pipe', 'w'],
     ];
 
-    $process = proc_open($cmd, $descriptors, $pipes, __DIR__, null);
+    $env = [
+        'HOME' => __DIR__ . '/data/chrome-home',
+        'CHROME_HOME' => __DIR__ . '/data/chrome-home',
+        'PATH' => getenv('PATH') ?: '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin',
+        'LANG' => getenv('LANG') ?: 'en_US.UTF-8',
+    ];
+
+    if (getenv('CHROME_PATH')) {
+        $env['CHROME_PATH'] = (string) getenv('CHROME_PATH');
+    }
+
+    $chromeHome = $env['CHROME_HOME'];
+    if (!is_dir($chromeHome) && !mkdir($chromeHome, 0755, true) && !is_dir($chromeHome)) {
+        return ['ok' => false, 'html' => '', 'exit_code' => 1, 'error' => 'cannot create chrome home dir'];
+    }
+
+    $process = proc_open($cmd, $descriptors, $pipes, __DIR__, $env);
     if (!is_resource($process)) {
         return ['ok' => false, 'html' => '', 'exit_code' => 1, 'error' => 'failed to start browser fetch'];
     }
@@ -242,13 +258,17 @@ function fetch_via_browser(string $url): array
 
     $exitCode = proc_close($process);
     $html = is_string($stdout) ? $stdout : '';
+    $errorText = trim((string) $stderr);
+    if (strlen($errorText) > 300) {
+        $errorText = substr($errorText, 0, 300) . '…';
+    }
 
     if ($exitCode === 1 || $html === '') {
         return [
             'ok' => false,
             'html' => $html,
             'exit_code' => $exitCode,
-            'error' => trim((string) $stderr) !== '' ? trim((string) $stderr) : 'browser fetch failed',
+            'error' => $errorText !== '' ? $errorText : 'browser fetch failed',
         ];
     }
 

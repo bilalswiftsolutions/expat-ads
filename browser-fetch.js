@@ -16,6 +16,8 @@
 
 const { chromium } = require('playwright-core');
 const fs = require('fs');
+const path = require('path');
+const os = require('os');
 const { execSync } = require('child_process');
 
 const url = process.argv[2];
@@ -23,6 +25,10 @@ if (!url) {
   console.error('Usage: node browser-fetch.js <url>');
   process.exit(1);
 }
+
+const APP_DIR = __dirname;
+const CHROME_HOME = process.env.CHROME_HOME
+  || path.join(APP_DIR, 'data', 'chrome-home');
 
 const CHROME_CANDIDATES = [
   process.env.CHROME_PATH,
@@ -35,17 +41,44 @@ const CHROME_CANDIDATES = [
   '/usr/lib/chromium-browser/chromium-browser',
 ].filter(Boolean);
 
+function ensureDir(dir) {
+  fs.mkdirSync(dir, { recursive: true });
+}
+
+function prepareWritableHome() {
+  // www-data often has HOME=/var/www which is not writable.
+  // Force Chrome into an app-owned writable home instead.
+  const home = CHROME_HOME;
+  ensureDir(home);
+  ensureDir(path.join(home, '.local', 'share', 'applications'));
+  ensureDir(path.join(home, '.config'));
+  ensureDir(path.join(home, '.cache'));
+  ensureDir(path.join(home, 'crashpad'));
+
+  process.env.HOME = home;
+  process.env.XDG_CONFIG_HOME = path.join(home, '.config');
+  process.env.XDG_CACHE_HOME = path.join(home, '.cache');
+  process.env.XDG_DATA_HOME = path.join(home, '.local', 'share');
+  process.env.XDG_RUNTIME_DIR = process.env.XDG_RUNTIME_DIR || path.join(os.tmpdir(), 'expat-chrome-runtime');
+  try {
+    ensureDir(process.env.XDG_RUNTIME_DIR);
+  } catch {
+    // ignore
+  }
+
+  return home;
+}
+
 function findChrome() {
-  for (const path of CHROME_CANDIDATES) {
+  for (const chromePath of CHROME_CANDIDATES) {
     try {
-      fs.accessSync(path, fs.constants.X_OK);
-      return path;
+      fs.accessSync(chromePath, fs.constants.X_OK);
+      return chromePath;
     } catch {
       // try next
     }
   }
 
-  // Last resort: resolve from PATH (works for www-data cron if PATH includes chrome).
   for (const name of ['google-chrome', 'google-chrome-stable', 'chromium', 'chromium-browser']) {
     try {
       const resolved = execSync(`command -v ${name}`, {
@@ -109,7 +142,6 @@ function isActivePage(html, title) {
     return true;
   }
 
-  // Title like: "... 63782877 | expatriates.com"
   return /,\s*\d{5,}\s*\|\s*expatriates\.com/i.test(t);
 }
 
@@ -124,13 +156,34 @@ function hasDecisiveContent(html, title) {
     process.exit(1);
   }
 
+  let home;
+  try {
+    home = prepareWritableHome();
+  } catch (err) {
+    console.error('Cannot prepare Chrome home dir: ' + (err && err.message ? err.message : err));
+    process.exit(1);
+  }
+
   const browser = await chromium.launch({
     executablePath,
     headless: true,
+    env: {
+      ...process.env,
+      HOME: home,
+      XDG_CONFIG_HOME: process.env.XDG_CONFIG_HOME,
+      XDG_CACHE_HOME: process.env.XDG_CACHE_HOME,
+      XDG_DATA_HOME: process.env.XDG_DATA_HOME,
+    },
     args: [
       '--no-sandbox',
+      '--disable-setuid-sandbox',
       '--disable-dev-shm-usage',
+      '--disable-gpu',
+      '--disable-software-rasterizer',
       '--disable-blink-features=AutomationControlled',
+      '--disable-crash-reporter',
+      '--disable-breakpad',
+      `--crash-dumps-dir=${path.join(home, 'crashpad')}`,
     ],
   });
 
@@ -157,10 +210,9 @@ function hasDecisiveContent(html, title) {
       title = await page.title();
       html = await page.content();
 
-      // Wait until we have Active OR Removed evidence — do not exit early
-      // just because Cloudflare UI disappeared (body may still be loading).
       if (!isCloudflareChallenge(html, title) && hasDecisiveContent(html, title)) {
         process.stdout.write(html);
+        await browser.close();
         process.exit(0);
       }
 
@@ -170,15 +222,22 @@ function hasDecisiveContent(html, title) {
     title = await page.title();
     html = await page.content();
     process.stdout.write(html);
+    await browser.close();
 
     if (isCloudflareChallenge(html, title) || !hasDecisiveContent(html, title)) {
       process.exit(2);
     }
     process.exit(0);
   } catch (err) {
-    console.error(String(err && err.message ? err.message : err));
+    try {
+      await browser.close();
+    } catch {
+      // ignore
+    }
+    const message = String(err && err.message ? err.message : err);
+    // Keep UI notes short — full Playwright dumps are huge.
+    const short = message.split('\n')[0].slice(0, 240);
+    console.error(short);
     process.exit(1);
-  } finally {
-    await browser.close();
   }
 })();

@@ -232,6 +232,7 @@ sudo npm install --omit=dev
 
 | Problem | Likely cause | Fix |
 |---------|----------------|-----|
+| Status **Unknown** + `Permission denied` / `/var/www/.local` | Chrome home not writable for `www-data` | Pull latest code (uses `data/chrome-home`); ensure `chown -R www-data:www-data /var/www/expat-status` |
 | Status **Unknown** + note `Chrome/Chromium not found` | Chrome not installed on server | Install Chrome/Chromium (see below) |
 | Status stuck **Unknown** otherwise | Cloudflare / incomplete page | Ensure `npm install` ran; test `node browser-fetch.js <url>` |
 | Add/check hangs then fails | PHP timeout | Nginx `fastcgi_read_timeout 180s`; PHP `max_execution_time` high enough |
